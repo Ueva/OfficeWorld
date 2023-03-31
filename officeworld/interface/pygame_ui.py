@@ -8,12 +8,14 @@ Colors = {
     CellType.ROOM: (175, 125, 85),
     CellType.UPSTAIR: (0, 128, 0),
     CellType.DOWNSTAIR: (128, 0, 0),
+    CellType.ELEVATOR: (0, 0, 128),
     CellType.BACKGROUND: (80, 60, 40),
 }
 
 # Generate Office.
-office_gen = OfficeGenerator()
-office = office_gen.generate_office_floor()
+office_gen = OfficeGenerator(elevator_location=(7, 7))
+# office = office_gen.generate_office_floor()
+office = office_gen.generate_office_building()[0]
 
 # Display Variables.
 SCREEN_WIDTH = 640

@@ -2,7 +2,7 @@ import random
 
 from enum import Enum
 
-CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "BACKGROUND"])
+CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "ELEVATOR", "BACKGROUND"])
 
 
 class OfficeGenerator(object):
@@ -16,6 +16,7 @@ class OfficeGenerator(object):
         min_room_length=4,
         max_hall_rate=0.15,
         extra_door_prob=0.2,
+        elevator_location=None,
     ):
         # Initialise Floor Parameters.
         self.floor_width = floor_width
@@ -24,18 +25,31 @@ class OfficeGenerator(object):
         self.hall_width = hall_width
         self.total_floor_area = floor_width * floor_height
 
-        # Initialise other OfficeGen constraints.
+        # Initialise other Office Generation constraints.
         self.min_room_area = min_room_area
         self.max_hall_rate = max_hall_rate
         self.min_room_length = min_room_length
         self.extra_door_prob = extra_door_prob
+
+        if elevator_location is None:
+            self.elevator_location = None
+        else:
+            self.elevator_location = elevator_location
 
         # Initialise Office.
         self.office = [self._get_empty_office_floor() for _ in range(num_floors)]
 
     def generate_office_building(self):
         for i in range(len(self.office)):
-            self.office[i] = self.generate_office_floor()
+            if self.elevator_location is None:
+                self.office[i] = self.generate_office_floor()
+            else:
+                x, y = self.elevator_location
+                while self.office[i][y][y] != CellType.HALL:
+                    self.office[i] = self.generate_office_floor()
+                    if self.office[i][y][y] != CellType.HALL:
+                        print("Binned")
+                self.office[i][y][x] = CellType.ELEVATOR
 
         return self.office
 
