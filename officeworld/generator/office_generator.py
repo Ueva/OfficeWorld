@@ -48,7 +48,7 @@ class OfficeGenerator(object):
                 while self.office[i][y][y] != CellType.HALL:
                     self.office[i] = self.generate_office_floor()
                     if self.office[i][y][y] != CellType.HALL:
-                        print("Binned")
+                        print("Rejected: Cannot Place Elevator in Wall")
                 self.office[i][y][x] = CellType.ELEVATOR
 
         return self.office
@@ -171,6 +171,7 @@ class OfficeGenerator(object):
                     connected_rooms.append(room)
                     room_connected = True
                     break
+                # Check if there's a hallway to the right of this room.
                 elif x + 1 < len(office[0]) and office[y][x + 1] == CellType.HALL and wall in right_wall:
                     office[y][x] = CellType.ROOM
                     connected_rooms.append(room)
@@ -185,41 +186,42 @@ class OfficeGenerator(object):
             for wall in walls:
                 x, y = wall
 
-                # Check if there's a hallway above this room.
+                # Check if there's a connected room above this room.
                 if y - 1 >= 0 and office[y - 1][x] == CellType.ROOM and wall in top_wall:
                     neigh_room, _ = self._get_room_at_point(
                         x, y - 1, connected_rooms + unconnected_rooms, halls, office
                     )
-                    if neigh_room in connected_rooms:
+                    if neigh_room is not None and neigh_room in connected_rooms:
                         office[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
-                # Check if there's a hallway below this room.
+                # Check if there's a connected room below this room.
                 elif y + 1 < len(office) and office[y + 1][x] == CellType.ROOM and wall in bottom_wall:
                     neigh_room, _ = self._get_room_at_point(
                         x, y + 1, connected_rooms + unconnected_rooms, halls, office
                     )
-                    if neigh_room in connected_rooms:
+                    if neigh_room is not None and neigh_room in connected_rooms:
                         office[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
-                # Check if there's a hallway to the left of this room.
+                # Check if there's a connected room to the left of this room.
                 elif x - 1 >= 0 and office[y][x - 1] == CellType.ROOM and wall in left_wall:
                     neigh_room, _ = self._get_room_at_point(
                         x - 1, y, connected_rooms + unconnected_rooms, halls, office
                     )
-                    if neigh_room in connected_rooms:
+                    if neigh_room is not None and neigh_room in connected_rooms:
                         office[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
+                # Check if there's a connected room to the right of this room.
                 elif x + 1 < len(office[0]) and office[y][x + 1] == CellType.ROOM and wall in right_wall:
                     neigh_room, _ = self._get_room_at_point(
                         x + 1, y, connected_rooms + unconnected_rooms, halls, office
                     )
-                    if neigh_room in connected_rooms:
+                    if neigh_room is not None and neigh_room in connected_rooms:
                         office[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
@@ -335,4 +337,5 @@ class OfficeGenerator(object):
             for hall in halls:
                 if self._is_point_in_room(x, y, hall):
                     return hall, CellType.HALL
-        raise ValueError(f"Point ({x},{y}) outside bounds of office of sized ({len(office[0])},{len(office)}).")
+
+        return None, office[y][x]
