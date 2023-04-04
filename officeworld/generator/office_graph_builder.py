@@ -66,13 +66,3 @@ def _office_layout(stg, floor_height, floor_width, spacing=24.0):
 
         stg.nodes[node]["viz"]["position"]["x"] = x * spacing
         stg.nodes[node]["viz"]["position"]["y"] = -y * spacing - ((floor * floor_height) + 3) * spacing
-
-
-if __name__ == "__main__":
-    from officeworld.generator import OfficeGenerator
-
-    office_gen = OfficeGenerator(num_floors=5, elevator_location=(7, 7))
-    office_building = office_gen.generate_office_building()
-    stg = generate_office_graph(office_building)
-
-    nx.write_gexf(stg, "Office_STG.gexf")
