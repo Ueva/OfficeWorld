@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/Ueva/OffcieWorld",
     packages=setuptools.find_packages(exclude=("example", "test")),
-    install_requires=["numpy", "pygame"],
+    install_requires=["numpy", "pygame", "networkx"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

@@ -1,6 +1,11 @@
 import random
 
+import networkx as nx
+
 from enum import Enum
+from tqdm import tqdm
+
+from officeworld.utils import office_layout
 
 CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "ELEVATOR", "BACKGROUND"])
 
@@ -40,26 +45,37 @@ class OfficeGenerator(object):
         self.office = [self._get_empty_office_floor() for _ in range(num_floors)]
 
     def generate_office_building(self):
-        for i in range(len(self.office)):
-            if self.elevator_location is None:
-                self.office[i] = self.generate_office_floor()
-            else:
-                x, y = self.elevator_location
-                while self.office[i][y][y] != CellType.HALL:
+        rej_elevator = 0
+        rej_connected = 0
+        # for i in range(self.num_floors):
+        for i in tqdm(range(self.num_floors), desc="Generating Office Floors"):
+            while True:
+                if self.elevator_location is None:
                     self.office[i] = self.generate_office_floor()
-                    if self.office[i][y][y] != CellType.HALL:
-                        print("Rejected: Cannot Place Elevator in Wall")
-                self.office[i][y][x] = CellType.ELEVATOR
+                else:
+                    x, y = self.elevator_location
+                    while self.office[i][y][y] != CellType.HALL:
+                        self.office[i] = self.generate_office_floor()
+                        if self.office[i][y][y] != CellType.HALL:
+                            # print("Rejected: Cannot Place Elevator in Wall.")
+                            rej_elevator += 1
+                    self.office[i][y][x] = CellType.ELEVATOR
+                if nx.is_weakly_connected(self.generate_office_graph([self.office[i]], layout=False)):
+                    break
+                else:
+                    # print("Rejected: State-transition graph is not connected.")
+                    rej_connected += 1
+
+        print(f"Successfully generated office building with {self.num_floors} floors!")
+        print(
+            f"Rejected {rej_elevator + rej_connected} floors.\n\tCouldn't place elevator {rej_elevator} times.\n\tOffice not connected {rej_connected} times."
+        )
 
         return self.office
 
     def generate_office_floor(self):
         # Fill entire map with wall.
-        office = []
-        for y in range(self.floor_height):
-            office.append([])
-            for x in range(self.floor_width):
-                office[y].append(CellType.WALL)
+        office = self._get_empty_office_floor()
 
         splittable_chunks = [(1, 1, self.floor_width - 2, self.floor_height - 2)]
         unsplittable_chunks = []
@@ -339,3 +355,57 @@ class OfficeGenerator(object):
                     return hall, CellType.HALL
 
         return None, office[y][x]
+
+    def generate_office_graph(self, office=None, layout=True):
+        if office is None:
+            office = self.office
+
+        valid_state_types = {CellType.ROOM, CellType.HALL, CellType.ELEVATOR}
+
+        stg = nx.DiGraph()
+
+        num_floors = len(office)
+        floor_height = len(office[0])
+        floor_width = len(office[0][0])
+
+        for floor in range(num_floors):
+            for y in range(floor_height):
+                for x in range(floor_width):
+                    if office[floor][y][x] in valid_state_types:
+                        state = (floor, x, y)
+
+                        # Add node if it doesn't exist.
+                        if state not in stg.nodes():
+                            stg.add_node(state)
+
+                        # Add edges between this node and its neighbours.
+                        if office[floor][y + 1][x] in valid_state_types:
+                            stg.add_edge(state, (floor, x, y + 1))
+                        if office[floor][y - 1][x] in valid_state_types:
+                            stg.add_edge(state, (floor, x, y - 1))
+                        if office[floor][y][x + 1] in valid_state_types:
+                            stg.add_edge(state, (floor, x + 1, y))
+                        if office[floor][y][x - 1] in valid_state_types:
+                            stg.add_edge(state, (floor, x - 1, y))
+
+                        # Add edges between elevators on different floors.
+                        if office[floor][y][x] == CellType.ELEVATOR:
+                            if floor < num_floors - 1:  # Up elevator.
+                                stg.add_edge(state, (floor + 1, x, y))
+                            if floor > 0:  # Down elevator.
+                                stg.add_edge(state, (floor - 1, x, y))
+
+                        # Add self-loops to states next to walls.
+                        if office[floor][y + 1][x] == CellType.WALL:
+                            stg.add_edge(state, state)
+                        if office[floor][y - 1][x] == CellType.WALL:
+                            stg.add_edge(state, state)
+                        if office[floor][y][x + 1] == CellType.WALL:
+                            stg.add_edge(state, state)
+                        if office[floor][y][x - 1] == CellType.WALL:
+                            stg.add_edge(state, state)
+
+        if layout:
+            office_layout(stg, floor_height, floor_width)
+
+        return stg
