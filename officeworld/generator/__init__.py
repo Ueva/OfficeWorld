@@ -1,2 +1,3 @@
 from officeworld.generator.office_generator import CellType
 from officeworld.generator.office_generator import OfficeGenerator
+from officeworld.generator.office_graph_builder import generate_office_graph
