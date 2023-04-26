@@ -10,12 +10,14 @@ Colors = {
     CellType.DOWNSTAIR: (128, 0, 0),
     CellType.ELEVATOR: (0, 0, 128),
     CellType.BACKGROUND: (80, 60, 40),
+    CellType.START: (0, 255, 0),
+    CellType.GOAL: (255, 0, 0),
 }
 
-# Generate Office.
-office_gen = OfficeGenerator(elevator_location=(7, 7))
+# Initialise Office Generator.
+# office_gen = OfficeGenerator(elevator_location=(7, 7))
+office_gen = OfficeGenerator(start_floor=0, goal_floor=0)
 # office = office_gen.generate_office_floor()
-office = office_gen.generate_office_building()[0]
 
 # Display Variables.
 SCREEN_WIDTH = 640
@@ -43,6 +45,8 @@ while running:
         if event.type == pygame.QUIT:
             quit()
 
+    office = office_gen.generate_office_building()[0]
+
     # Update Display.
     screen.fill(Colors[CellType.BACKGROUND])
 
@@ -60,3 +64,4 @@ while running:
     pygame.display.flip()
 
     clock.tick()
+    pygame.time.delay(200)

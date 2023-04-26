@@ -3,11 +3,10 @@ import random
 import networkx as nx
 
 from enum import Enum
-from tqdm import tqdm
 
 from officeworld.utils import office_layout
 
-CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "ELEVATOR", "BACKGROUND"])
+CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "ELEVATOR", "BACKGROUND", "START", "GOAL"])
 
 
 class OfficeGenerator(object):
@@ -22,6 +21,8 @@ class OfficeGenerator(object):
         max_hall_rate=0.15,
         extra_door_prob=0.2,
         elevator_location=None,
+        start_floor=None,
+        goal_floor=None,
     ):
         # Initialise Floor Parameters.
         self.floor_width = floor_width
@@ -41,17 +42,28 @@ class OfficeGenerator(object):
         else:
             self.elevator_location = elevator_location
 
+        # Initialise start and goal parameters.
+        if start_floor is not None:
+            self.start_floor = start_floor
+        else:
+            self.start_floor = -1
+
+        if goal_floor is not None:
+            self.goal_floor = goal_floor
+        else:
+            self.goal_floor = -1
+
         # Initialise Office.
         self.office = [self._get_empty_office_floor() for _ in range(num_floors)]
 
-    def generate_office_building(self):
+    def generate_office_building(self, verbose=False):
         rej_elevator = 0
         rej_connected = 0
-        # for i in range(self.num_floors):
-        for i in tqdm(range(self.num_floors), desc="Generating Office Floors"):
+
+        for i in range(self.num_floors):
             while True:
                 if self.elevator_location is None:
-                    self.office[i] = self.generate_office_floor()
+                    self.office[i] = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
                 else:
                     x, y = self.elevator_location
                     while self.office[i][y][y] != CellType.HALL:
@@ -66,14 +78,15 @@ class OfficeGenerator(object):
                     # print("Rejected: State-transition graph is not connected.")
                     rej_connected += 1
 
-        print(f"Successfully generated office building with {self.num_floors} floors!")
-        print(
-            f"Rejected {rej_elevator + rej_connected} floors.\n\tCouldn't place elevator {rej_elevator} times.\n\tOffice not connected {rej_connected} times."
-        )
+        if verbose:
+            print(f"Successfully generated office building with {self.num_floors} floors!")
+            print(
+                f"Rejected {rej_elevator + rej_connected} floors.\n\tCouldn't place elevator {rej_elevator} times.\n\tOffice not connected {rej_connected} times."
+            )
 
         return self.office
 
-    def generate_office_floor(self):
+    def generate_office_floor(self, contains_start=False, contains_goal=False):
         # Fill entire map with wall.
         office = self._get_empty_office_floor()
 
@@ -247,6 +260,16 @@ class OfficeGenerator(object):
             if not room_connected:
                 unconnected_rooms.append(room)
 
+        # Choose random starting room.
+        if contains_start:
+            starting_room = random.choice(connected_rooms)
+            self._carve_area(starting_room, CellType.START, office)
+
+        # Choose random goal room.
+        if contains_goal:
+            goal_room = random.choice(connected_rooms)
+            self._carve_area(goal_room, CellType.GOAL, office)
+
         return office
 
     def _get_empty_office_floor(self):
@@ -360,7 +383,7 @@ class OfficeGenerator(object):
         if office is None:
             office = self.office
 
-        valid_state_types = {CellType.ROOM, CellType.HALL, CellType.ELEVATOR}
+        valid_state_types = {CellType.ROOM, CellType.HALL, CellType.ELEVATOR, CellType.START, CellType.GOAL}
 
         stg = nx.DiGraph()
 
@@ -371,7 +394,7 @@ class OfficeGenerator(object):
         for floor in range(num_floors):
             for y in range(floor_height):
                 for x in range(floor_width):
-                    if office[floor][y][x] in valid_state_types:
+                    if office[floor][y][x] in valid_state_types - {CellType.GOAL}:
                         state = (floor, x, y)
 
                         # Add node if it doesn't exist.
