@@ -66,9 +66,9 @@ class OfficeGenerator(object):
                     self.office[i] = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
                 else:
                     x, y = self.elevator_location
-                    while self.office[i][y][y] != CellType.HALL:
-                        self.office[i] = self.generate_office_floor()
-                        if self.office[i][y][y] != CellType.HALL:
+                    while self.office[i][y][x] != CellType.HALL:
+                        self.office[i] = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                        if self.office[i][y][x] != CellType.HALL:
                             # print("Rejected: Cannot Place Elevator in Wall.")
                             rej_elevator += 1
                     self.office[i][y][x] = CellType.ELEVATOR
