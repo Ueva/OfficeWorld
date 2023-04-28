@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="officeworld",
-    version="0.1.0",
+    version="0.1.1",
     author="Joshua Evans",
     author_email="jbe25@bath.ac.uk",
     description="A highly-customisable, procedurally-generated 'office building' environment for reinforcement learning. Essentally, gridworlds on steroids.",
@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/Ueva/OffcieWorld",
     packages=setuptools.find_packages(exclude=("example", "test")),
-    install_requires=["numpy", "pygame", "networkx"],
+    install_requires=["numpy", "pygame", "networkx", "simpleoptions"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
