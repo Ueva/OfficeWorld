@@ -17,6 +17,10 @@ class OfficeWorldEnvironment(BaseEnvironment):
             generator = OfficeGenerator(**officegen_kwargs)
             self.office = generator.generate_office_building()
 
+        self.num_floors = len(self.office)
+        self.floor_height = len(self.office[0])
+        self.floor_width = len(self.office[0][0])
+
         self.stg = OfficeGenerator().generate_office_graph(self.office, layout=False)
 
         self.state_space = set(self.stg.nodes)
@@ -25,14 +29,9 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
     def _initialise_initial_states(self):
         initial_states = []
-
-        num_floors = len(self.office)
-        floor_height = len(self.office[0])
-        floor_width = len(self.office[0][0])
-
-        for i in range(num_floors):
-            for y in range(floor_height):
-                for x in range(floor_width):
+        for i in range(self.num_floors):
+            for y in range(self.floor_height):
+                for x in range(self.floor_width):
                     if self.office[i][y][x] == CellType.START:
                         initial_states.append((i, x, y))
 
@@ -40,14 +39,9 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
     def _initialise_terminal_states(self):
         terminal_states = set()
-
-        num_floors = len(self.office)
-        floor_height = len(self.office[0])
-        floor_width = len(self.office[0][0])
-
-        for i in range(num_floors):
-            for y in range(floor_height):
-                for x in range(floor_width):
+        for i in range(self.num_floors):
+            for y in range(self.floor_height):
+                for x in range(self.floor_width):
                     if self.office[i][y][x] == CellType.GOAL:
                         terminal_states.add((i, x, y))
 
@@ -96,6 +90,8 @@ class OfficeWorldEnvironment(BaseEnvironment):
             terminal = True
             reward += 1.0
 
+        self.current_state = (floor, x, y)
+
         return (floor, x, y), reward, terminal, {}
 
     def render(self, mode="human"):
@@ -119,11 +115,19 @@ class OfficeWorldEnvironment(BaseEnvironment):
             return []
 
         # Otherwise, the available actions depend on whether the state
-        # is an elevator or not.
+        # is an elevator or not. Also, if there is only one floor, the agent cannot go up or down.
         # TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES WHEN THEY ARE ADDED.
         floor, x, y = state
-        if self.office[floor][y][x] == CellType.ELEVATOR:
-            return [0, 1, 2, 3, 4, 5]
+        if self.office[floor][y][x] == CellType.ELEVATOR and self.num_floors > 1:
+            # If on ground floor, agent can only go up.
+            if floor == 0:
+                return [0, 1, 2, 3, 4]
+            # If on top floor, agent can only go down.
+            elif floor == len(self.office) - 1:
+                return [0, 1, 2, 3, 5]
+            # Else, the agent can go up and down.
+            else:
+                return [0, 1, 2, 3, 4, 5]
         else:
             return [0, 1, 2, 3]
 
@@ -142,8 +146,13 @@ class OfficeWorldEnvironment(BaseEnvironment):
         else:
             floor_0, x_0, y_0 = self.current_state
 
+        if actions is not None:
+            available_actions = actions
+        else:
+            available_actions = self.get_available_actions(state=(floor_0, x_0, y_0))
+
         successors = set()
-        for action in actions:
+        for action in available_actions:
             if action == 0:  # North.
                 floor, x, y = floor_0, x_0, y_0 + 1
             elif action == 1:  # South.
