@@ -20,13 +20,13 @@ Colors = {
 num_floors = 1
 # office_gen = OfficeGenerator(num_floors=num_floors, elevator_location=(25, 20), start_floor=1, goal_floor=2)
 office_gen = OfficeGenerator(
-    floor_width=45,
-    floor_height=35,
+    floor_width=50,
+    floor_height=40,
     min_room_area=9,
     min_room_length=3,
     max_hall_rate=0.2,
     num_floors=num_floors,
-    elevator_location=(22, 17),
+    elevator_location=(25, 20),
     start_floor=0,
     goal_floor=0,
 )
