@@ -4,6 +4,7 @@ from officeworld.generator import CellType
 
 PUBLIC_ENUMS = {"CellType": CellType}
 
+
 # Source: https://stackoverflow.com/questions/24481852/serialising-an-enum-member-to-json/24482806#24482806
 class EnumEncoder(json.JSONEncoder):
     def default(self, obj):

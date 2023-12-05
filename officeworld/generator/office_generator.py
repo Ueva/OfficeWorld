@@ -24,6 +24,22 @@ class OfficeGenerator(object):
         start_floor=None,
         goal_floor=None,
     ):
+        """
+        Initialises an Office generator.
+
+        Args:
+            floor_width (int, optional): The width of each office floor. Defaults to 50.
+            floor_height (int, optional): The height of each office floor. Defaults to 40.
+            num_floors (int, optional): How many floors the office should have. Defaults to 1.
+            hall_width (int, optional): How wide each corridor should be. Defaults to 2.
+            min_room_area (int, optional): The generator will not try to subdivide rooms with less area than this. Defaults to 50.
+            min_room_length (int, optional): The generator will not try to subdivide rooms with an edge length less than this. Defaults to 4.
+            max_hall_rate (float, optional): The proportion of a floor the generator will aim to cover in corridors. Defaults to 0.15.
+            extra_door_prob (float, optional): How likely another door will be added to a room after one has already been placed. Defaults to 0.2.
+            elevator_location (_type_, optional): The at which the elevator shaft will be placed. Defaults to None.
+            start_floor (_type_, optional): Which floor the start room will be on. Defaults to None.
+            goal_floor (_type_, optional): Which floor the goal room will be on. Defaults to None.
+        """
         # Initialise Floor Parameters.
         self.floor_width = floor_width
         self.floor_height = floor_height
