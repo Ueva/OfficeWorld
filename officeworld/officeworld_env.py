@@ -1,7 +1,7 @@
 import random
 
 import networkx as nx
-
+import numpy as np
 from simpleoptions import BaseEnvironment
 
 from officeworld.generator import OfficeGenerator, CellType
@@ -23,9 +23,13 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
         self.stg = OfficeGenerator().generate_office_graph(self.office, layout=False)
 
+        self.actions = [0, 1, 2, 3, 4, 5]  # North, South, East, West, Ascend, Descend
+        self.num_actions = len(self.actions)
         self.state_space = set(self.stg.nodes)
         self.initial_states = self._initialise_initial_states()
         self.terminal_states = self._initialise_terminal_states()
+        self.successor_representation = None
+        self._cached_sr_gamma = None
 
     def _initialise_initial_states(self):
         initial_states = []
@@ -174,7 +178,69 @@ class OfficeWorldEnvironment(BaseEnvironment):
         return list(successors)
 
     def get_successor_representation(self, gamma, state=None):
-        pass
+        if self.successor_representation is None or self._cached_sr_gamma != gamma:
+            # First, we build up the transition matrix (assuming a random policy).
+            transition_matrix = self.build_transition_matrix()
+            # Then, we use the Von Neumann expansion to compute the Successor Representation.
+            sr = np.linalg.inv(np.identity(len(transition_matrix)) - gamma * transition_matrix)
+
+            self.successor_representation = sr
+            self._cached_sr_gamma = gamma
+
+        if state is None:
+            return self.successor_representation
+        else:
+            return self.successor_representation[state]
+
+    def build_transition_matrix(self):
+        transition_matrix = np.zeros((len(self.state_space), len(self.state_space)))
+        self.mask = self.get_state_mask()
+        for state in self.state_space:
+            for a in self.get_available_actions(state):
+                _ = self.reset(state)
+                try:
+                    s = self.encode(state)
+                except:
+                    print(state)
+                next_state, _, _, _ = self.step(a)
+                next_state = self.encode(next_state)
+                if s < 0:
+                    print(s)
+                if next_state < 0:
+                    print(f"Next: {next_state}")
+                transition_matrix[self.mask.index(s)][self.mask.index(next_state)] += 1.0 / self.num_actions
+        return transition_matrix
+
+    def state_to_index(self, state):
+        encoding = self.encode(state)
+        return self.mask.index(encoding)
+
+    def index_to_state(self, index):
+        encoding = self.mask[index]
+        return self.decode(encoding)
+
+    def get_state_mask(self):
+        atomic_states = [self.encode(s) for s in self.state_space]
+        return sorted(atomic_states)
+
+    def encode(self, state):
+        floor, x, y = state
+        # num_floors, width, height
+        i = floor
+        i *= self.floor_width
+        i += x
+        i *= self.floor_height
+        i += y
+        return i
+
+    def decode(self, i):
+        out = []
+        out.append(i % self.floor_height)
+        i = i // self.floor_height
+        out.append(i % self.floor_width)
+        i = i // self.floor_width
+        out.append(i)
+        return reversed(out)
 
     def generate_interaction_graph(self, directed=True):
         if directed:
