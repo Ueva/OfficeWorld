@@ -26,6 +26,7 @@ class OfficeWorldEnvironment(BaseEnvironment):
         self.actions = [0, 1, 2, 3, 4, 5]  # North, South, East, West, Ascend, Descend
         self.num_actions = len(self.actions)
         self.state_space = set(self.stg.nodes)
+        self.num_states = len(self.state_space)
         self.initial_states = self._initialise_initial_states()
         self.terminal_states = self._initialise_terminal_states()
         self.successor_representation = None
