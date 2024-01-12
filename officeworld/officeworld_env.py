@@ -198,17 +198,10 @@ class OfficeWorldEnvironment(BaseEnvironment):
         self.mask = self.get_state_mask()
         for state in self.state_space:
             for a in self.get_available_actions(state):
-                _ = self.reset(state)
-                try:
-                    s = self.encode(state)
-                except:
-                    print(state)
+                self.reset(state)
                 next_state, _, _, _ = self.step(a)
+                s = self.encode(state)
                 next_state = self.encode(next_state)
-                if s < 0:
-                    print(s)
-                if next_state < 0:
-                    print(f"Next: {next_state}")
                 transition_matrix[self.mask.index(s)][self.mask.index(next_state)] += 1.0 / self.num_actions
         return transition_matrix
 
