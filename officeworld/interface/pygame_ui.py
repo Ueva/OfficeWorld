@@ -24,10 +24,10 @@ office_gen = OfficeGenerator(
     min_room_area=9,
     min_room_length=3,
     max_hall_rate=0.2,
-    num_floors=1,
+    num_floors=8,
     elevator_location=(25, 20),
     start_floor=0,
-    goal_floor=0,
+    goal_floor=7,
 )
 # office_gen = OfficeGenerator(start_floor=0, goal_floor=0)
 # office = office_gen.generate_office_floor()
@@ -81,6 +81,10 @@ while running:
                 floor = max(floor - 1, 0)
             elif event.key == pygame.K_r:
                 office = regen_office()
+            elif event.key == pygame.K_HOME:
+                floor = 0
+            elif event.key == pygame.K_END:
+                floor = len(office) - 1
 
     # Update Display.
     screen.fill(Colors[CellType.BACKGROUND])
