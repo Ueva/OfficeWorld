@@ -2,14 +2,21 @@ import random
 
 import networkx as nx
 import numpy as np
-from simpleoptions import BaseEnvironment
+from simpleoptions import TransitionMatrixBaseEnvironment
 
 from officeworld.generator import OfficeGenerator, CellType
 
+# TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES.
+# TODO: ADD SUPPORT FOR MUDDY TILES (LARGER PENALTY).
+# TODO: ADD SUPPORT FOR CROWDED TILES (STOCHASTIC MOVEMENT).
+# TODO: REWRITE SR FUNCTIONALITY BASED ON TRANSITIONMATRIXBASEENVIRONMENT.
 
-class OfficeWorldEnvironment(BaseEnvironment):
+
+class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
     def __init__(self, office=None, officegen_kwargs=None):
-        super().__init__()
+
+        if officegen_kwargs is None and office is None:
+            raise ValueError("You must provide either an existing office or the arguments to generate one.")
 
         if office is not None:
             self.office = office
@@ -31,6 +38,8 @@ class OfficeWorldEnvironment(BaseEnvironment):
         self.terminal_states = self._initialise_terminal_states()
         self.successor_representation = None
         self._cached_sr_gamma = None
+
+        super().__init__(deterministic=True)
 
     def _initialise_initial_states(self):
         initial_states = []
@@ -62,42 +71,15 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
         return current_state
 
-    def step(self, action):
-        floor, x, y = self.current_state
+    def step(self, action, state=None):
+        if state is None:
+            next_state, reward, terminal, info = super().step(action, state=self.current_state)
+        else:
+            next_state, reward, terminal, info = super().step(action, state=state)
 
-        # Go North.
-        if action == 0:
-            y += 1
-        # Go South.
-        elif action == 1:
-            y -= 1
-        # Go East:
-        elif action == 2:
-            x += 1
-        # Go West.
-        elif action == 3:
-            x -= 1
-        # Go Up.
-        elif action == 4:
-            floor += 1
-        # Go Down.
-        elif action == 5:
-            floor -= 1
+        self.current_state = next_state
 
-        # Keep the agent in the same state if they have moved into a wall.
-        if self.office[floor][y][x] == CellType.WALL:
-            floor, x, y = self.current_state
-
-        # Compute reward: -0.0001 per decision stage, +1.0 for reaching the goal.
-        terminal = False
-        reward = -0.0001
-        if self.office[floor][y][x] == CellType.GOAL:
-            terminal = True
-            reward += 1.0
-
-        self.current_state = (floor, x, y)
-
-        return (floor, x, y), reward, terminal, {}
+        return next_state, reward, terminal, info
 
     def render(self, mode="human"):
         pass
@@ -121,7 +103,6 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
         # Otherwise, the available actions depend on whether the state
         # is an elevator or not. Also, if there is only one floor, the agent cannot go up or down.
-        # TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES WHEN THEY ARE ADDED.
         floor, x, y = state
         if self.office[floor][y][x] == CellType.ELEVATOR and self.num_floors > 1:
             # If on ground floor, agent can only go up.
@@ -151,13 +132,11 @@ class OfficeWorldEnvironment(BaseEnvironment):
         else:
             floor_0, x_0, y_0 = self.current_state
 
-        if actions is not None:
-            available_actions = actions
-        else:
-            available_actions = self.get_available_actions(state=(floor_0, x_0, y_0))
+        if actions is None:
+            actions = self.get_available_actions(state=(floor_0, x_0, y_0))
 
-        successors = set()
-        for action in available_actions:
+        successors = []
+        for action in actions:
             if action == 0:  # North.
                 floor, x, y = floor_0, x_0, y_0 + 1
             elif action == 1:  # South.
@@ -174,12 +153,18 @@ class OfficeWorldEnvironment(BaseEnvironment):
             if self.office[floor][y][x] == CellType.WALL:
                 floor, x, y = floor_0, x_0, y_0
 
-            successors.add((floor, x, y))
+            if self.is_state_terminal((floor, x, y)):
+                reward = 1.0 + -0.0001
+            else:
+                reward = -0.0001
 
-        return list(successors)
+            successors.append((((floor, x, y), reward), 1.0 / len(actions)))
+
+        return successors
 
     def get_successor_representation(self, gamma, state=None):
         if self.successor_representation is None or self._cached_sr_gamma != gamma:
+            # TODO: Rewrite to use TransitionMatrixBaseEnvironment's transition matrix.
             # First, we build up the transition matrix (assuming a random policy).
             transition_matrix = self.build_transition_matrix()
             # Then, we use the Von Neumann expansion to compute the Successor Representation.
