@@ -2,53 +2,148 @@ import random
 
 import networkx as nx
 import numpy as np
-from simpleoptions import BaseEnvironment
 
-from officeworld.generator import OfficeGenerator, CellType
+from typing import Dict
+
+from simpleoptions import TransitionMatrixBaseEnvironment
+
+from officeworld.generator.office_generator import OfficeGenerator
+from officeworld.generator.office_building import OfficeBuilding
+from officeworld.generator.cell_type import CellType
+from officeworld.interface.officeworld_renderer import OfficeWorldRenderer
+from officeworld.utils.graph_utils import office_layout
+
+# TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES.
+# TODO: ADD SUPPORT FOR MUDDY TILES (LARGER PENALTY).
+# TODO: ADD SUPPORT FOR CROWDED TILES (STOCHASTIC MOVEMENT).
+# TODO: REWRITE SR FUNCTIONALITY BASED ON TRANSITIONMATRIXBASEENVIRONMENT.
 
 
-class OfficeWorldEnvironment(BaseEnvironment):
-    def __init__(self, office=None, officegen_kwargs=None):
-        super().__init__()
+class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
+    def __init__(
+        self,
+        office: "OfficeBuilding" = None,
+        officegen_kwargs: Dict = None,
+        movement_penalty: float = -0.0001,
+        goal_reward: float = 1.0,
+        explorable: bool = False,
+    ):
+        """
+        A gym-like environment for interacting with an OfficeWorld office building.
+
+        Args:
+            office (OfficeBuilding, optional): The office to base the environment on. Defaults to None, in which a new office is generated.
+            officegen_kwargs (Dict, optional): Keword arguments to provide to OfficeGenerator, to generate a new office. Defaults to None, in which a provided office is used.
+            movement_penalty (float, optional): The penalty for each action taken. Defaults to -0.001.
+            goal_reward (float, optional): The reward for reaching the goal. Defaults to 1.0.
+            explorable (bool, optional): Whether the environment should be explorable, in which case terminal states are ignored. Defaults to False.
+
+        Raises:
+            ValueError: Raised if both office and officegen_kwargs are None. You must either provide a pre-generated office, or tell this class how to generate one.
+        """
+
+        if officegen_kwargs is None and office is None:
+            raise ValueError("You must provide either an existing office or the arguments to generate one.")
 
         if office is not None:
+            self._office_gen = OfficeGenerator()
             self.office = office
         else:
-            generator = OfficeGenerator(**officegen_kwargs)
-            self.office = generator.generate_office_building()
+            self._office_gen = OfficeGenerator(**officegen_kwargs)
+            self.office = self._office_gen.generate_office_building()
 
-        self.num_floors = len(self.office)
-        self.floor_height = len(self.office[0])
-        self.floor_width = len(self.office[0][0])
+        # Extract office building dimensions.
+        self.num_floors = len(self.office.layout)
+        self.floor_height = len(self.office.layout[0])
+        self.floor_width = len(self.office.layout[0][0])
 
-        self.stg = OfficeGenerator().generate_office_graph(self.office, layout=False)
-
-        self.actions = [0, 1, 2, 3, 4, 5]  # North, South, East, West, Ascend, Descend
+        # Define the action-space.
+        self.actions = [0, 1, 2, 3, 4, 5]  # North, South, East, West, Ascend, Descend.
         self.num_actions = len(self.actions)
-        self.state_space = set(self.stg.nodes)
-        self.num_states = len(self.state_space)
+
+        # If the office doesn't contain a start, we need to choose one.
+        if not self.office.contains_start:
+            start_room = None
+            while start_room is None:
+                # If a start floor is specified, we can choose a random start room on that floor.
+                if self.office.start_floor != -1:
+                    start_floor = self.office.start_floor
+                # Otherwise, we choose a random start floor.
+                else:
+                    start_floor = random.randint(0, self.num_floors - 1)
+
+                # Pick a random room on the start floor and set it as the start.
+                start_room = random.choice(self.office.rooms[start_floor])
+
+                # Check that the room is empty (i.e., that its cells are "ROOM" cells). We only need to check the top-left cell.
+                # We don't want to overwrite a room that has already been set as a goal.
+                left, top, _, _ = start_room
+                if self.office.layout[start_floor][top][left] != CellType.ROOM:
+                    start_room = None
+
+            self._office_gen._carve_area(start_room, CellType.START, self.office.layout[start_floor])
+
+        # If the office doesn't contain a goal, we need to choose one.
+        if not self.office.contains_goal and not explorable:
+            goal_room = None
+            while goal_room is None:
+                # If a goal floor is specified, we can choose a random goal room on that floor.
+                if self.office.goal_floor != -1:
+                    goal_floor = self.office.goal_floor
+                # Otherwise, we choose a random goal floor.
+                else:
+                    goal_floor = random.randint(0, self.num_floors - 1)
+
+                # Pick a random room on the goal floor and set it as the goal.
+                goal_room = random.choice(self.office.rooms[goal_floor])
+
+                # Check that the room is empty (i.e., that its cells are "ROOM" cells). We only need to check the top-left cell.
+                # We don't want to overwrite a room that has already been set as a start.
+                left, top, _, _ = goal_room
+                if self.office.layout[goal_floor][top][left] != CellType.ROOM:
+                    goal_room = None
+
+            self._office_gen._carve_area(goal_room, CellType.GOAL, self.office.layout[goal_floor])
+
+        # Define rewards and penalties.
+        self.movement_penalty = movement_penalty
+        self.goal_reward = goal_reward
+
+        # Define the state-transition graph and the state-space.
+        self.explorable = explorable
         self.initial_states = self._initialise_initial_states()
         self.terminal_states = self._initialise_terminal_states()
+        self.stg = self.generate_interaction_graph(directed=True)
+        self.state_space = set(self.stg.nodes)
+        self.num_states = len(self.state_space)
+
+        # Successor representation variables.
         self.successor_representation = None
         self._cached_sr_gamma = None
+
+        # Renderer variables.
+        self.renderer = None
+
+        super().__init__(deterministic=True)
 
     def _initialise_initial_states(self):
         initial_states = []
         for i in range(self.num_floors):
             for y in range(self.floor_height):
                 for x in range(self.floor_width):
-                    if self.office[i][y][x] == CellType.START:
-                        initial_states.append((i, x, y))
+                    if self.office.layout[i][y][x] == CellType.START:
+                        initial_states.append((i, y, x))
 
         return initial_states
 
     def _initialise_terminal_states(self):
         terminal_states = set()
-        for i in range(self.num_floors):
-            for y in range(self.floor_height):
-                for x in range(self.floor_width):
-                    if self.office[i][y][x] == CellType.GOAL:
-                        terminal_states.add((i, x, y))
+        if not self.explorable:
+            for i in range(self.num_floors):
+                for y in range(self.floor_height):
+                    for x in range(self.floor_width):
+                        if self.office.layout[i][y][x] == CellType.GOAL:
+                            terminal_states.add((i, y, x))
 
         return terminal_states
 
@@ -62,48 +157,28 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
         return current_state
 
-    def step(self, action):
-        floor, x, y = self.current_state
+    def step(self, action, state=None):
+        if state is None:
+            next_state, reward, terminal, info = super().step(action, state=self.current_state)
+        else:
+            next_state, reward, terminal, info = super().step(action, state=state)
 
-        # Go North.
-        if action == 0:
-            y += 1
-        # Go South.
-        elif action == 1:
-            y -= 1
-        # Go East:
-        elif action == 2:
-            x += 1
-        # Go West.
-        elif action == 3:
-            x -= 1
-        # Go Up.
-        elif action == 4:
-            floor += 1
-        # Go Down.
-        elif action == 5:
-            floor -= 1
+        self.current_state = next_state
 
-        # Keep the agent in the same state if they have moved into a wall.
-        if self.office[floor][y][x] == CellType.WALL:
-            floor, x, y = self.current_state
-
-        # Compute reward: -0.0001 per decision stage, +1.0 for reaching the goal.
-        terminal = False
-        reward = -0.0001
-        if self.office[floor][y][x] == CellType.GOAL:
-            terminal = True
-            reward += 1.0
-
-        self.current_state = (floor, x, y)
-
-        return (floor, x, y), reward, terminal, {}
+        return next_state, reward, terminal, info
 
     def render(self, mode="human"):
-        pass
+        if self.renderer is None:
+            self.renderer = OfficeWorldRenderer(
+                self.office.layout, self.num_floors, self.floor_height, self.floor_width
+            )
+
+        self.renderer.update(self.current_state)
 
     def close(self):
-        pass
+        if self.renderer is not None:
+            self.renderer.close()
+            self.renderer = None
 
     def get_state_space(self):
         return self.state_space
@@ -121,14 +196,13 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
         # Otherwise, the available actions depend on whether the state
         # is an elevator or not. Also, if there is only one floor, the agent cannot go up or down.
-        # TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES WHEN THEY ARE ADDED.
-        floor, x, y = state
-        if self.office[floor][y][x] == CellType.ELEVATOR and self.num_floors > 1:
+        floor, y, x = state
+        if self.office.layout[floor][y][x] == CellType.ELEVATOR and self.num_floors > 1:
             # If on ground floor, agent can only go up.
             if floor == 0:
                 return [0, 1, 2, 3, 4]
             # If on top floor, agent can only go down.
-            elif floor == len(self.office) - 1:
+            elif floor == len(self.office.layout) - 1:
                 return [0, 1, 2, 3, 5]
             # Else, the agent can go up and down.
             else:
@@ -147,39 +221,43 @@ class OfficeWorldEnvironment(BaseEnvironment):
 
     def get_successors(self, state=None, actions=None):
         if state is not None:
-            floor_0, x_0, y_0 = state
+            floor_0, y_0, x_0 = state
         else:
-            floor_0, x_0, y_0 = self.current_state
+            floor_0, y_0, x_0 = self.current_state
 
-        if actions is not None:
-            available_actions = actions
-        else:
-            available_actions = self.get_available_actions(state=(floor_0, x_0, y_0))
+        if actions is None:
+            actions = self.get_available_actions(state=(floor_0, y_0, x_0))
 
-        successors = set()
-        for action in available_actions:
+        successors = []
+        for action in actions:
             if action == 0:  # North.
-                floor, x, y = floor_0, x_0, y_0 + 1
+                floor, y, x = floor_0, y_0 + 1, x_0
             elif action == 1:  # South.
-                floor, x, y = floor_0, x_0, y_0 - 1
+                floor, y, x = floor_0, y_0 - 1, x_0
             elif action == 2:  # East.
-                floor, x, y = floor_0, x_0 + 1, y_0
+                floor, y, x = floor_0, y_0, x_0 + 1
             elif action == 3:  # West.
-                floor, x, y = floor_0, x_0 - 1, y_0
+                floor, y, x = floor_0, y_0, x_0 - 1
             elif action == 4:  # Up.
-                floor, x, y = floor_0 + 1, x_0, y_0
+                floor, y, x = floor_0 + 1, y_0, x_0
             elif action == 5:  # Down.
-                floor, x, y = floor_0 - 1, x_0, y_0
+                floor, y, x = floor_0 - 1, y_0, x_0
 
-            if self.office[floor][y][x] == CellType.WALL:
-                floor, x, y = floor_0, x_0, y_0
+            if self.office.layout[floor][y][x] == CellType.WALL:
+                floor, y, x = floor_0, y_0, x_0
 
-            successors.add((floor, x, y))
+            if self.is_state_terminal((floor, y, x)):
+                reward = self.goal_reward + self.movement_penalty
+            else:
+                reward = self.movement_penalty
 
-        return list(successors)
+            successors.append((((floor, y, x), reward), 1.0 / len(actions)))
+
+        return successors
 
     def get_successor_representation(self, gamma, state=None):
         if self.successor_representation is None or self._cached_sr_gamma != gamma:
+            # TODO: Rewrite to use TransitionMatrixBaseEnvironment's transition matrix.
             # First, we build up the transition matrix (assuming a random policy).
             transition_matrix = self.build_transition_matrix()
             # Then, we use the Von Neumann expansion to compute the Successor Representation.
@@ -218,7 +296,7 @@ class OfficeWorldEnvironment(BaseEnvironment):
         return sorted(atomic_states)
 
     def encode(self, state):
-        floor, x, y = state
+        floor, y, x = state
         # num_floors, width, height
         i = floor
         i *= self.floor_width
@@ -237,7 +315,6 @@ class OfficeWorldEnvironment(BaseEnvironment):
         return reversed(out)
 
     def generate_interaction_graph(self, directed=True):
-        if directed:
-            return self.stg
-        else:
-            return self.stg.to_undirected()
+        stg = super().generate_interaction_graph(directed=directed)
+        office_layout(stg, self.floor_height, self.floor_width)
+        return stg

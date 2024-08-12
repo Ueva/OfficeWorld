@@ -5,10 +5,10 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="officeworld",
-    version="0.1.1",
+    version="0.2.0",
     author="Joshua Evans",
     author_email="jbe25@bath.ac.uk",
-    description="A highly-customisable, procedurally-generated 'office building' environment for reinforcement learning. Essentally, gridworlds on steroids.",
+    description="A highly-customisable, procedurally-generated 'office building' environment for reinforcement learning.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Ueva/OffcieWorld",
