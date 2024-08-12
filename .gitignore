@@ -107,3 +107,4 @@ venv.bak/
 # Files generated during testing.
 *.json
 *.gexf
+scratchpad*
