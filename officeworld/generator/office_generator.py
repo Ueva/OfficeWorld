@@ -411,11 +411,11 @@ class OfficeGenerator(object):
     def generate_office_graph(self, office=None, layout=True):
         if office is None:
             office_floors = self.office_floors
-
-        if isinstance(office, OfficeBuilding):
-            office_floors = office.layout
         else:
-            office_floors = office
+            if isinstance(office, OfficeBuilding):
+                office_floors = office.layout
+            else:
+                office_floors = office
 
         valid_state_types = {CellType.ROOM, CellType.HALL, CellType.ELEVATOR, CellType.START, CellType.GOAL}
 

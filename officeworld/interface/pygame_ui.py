@@ -1,8 +1,9 @@
 import json
 import pygame
 
-from officeworld.generator import CellType, OfficeGenerator
-from officeworld.utils.serialisation import EnumEncoder, as_enum
+from officeworld.generator.cell_type import CellType
+from officeworld.generator.office_generator import OfficeGenerator
+from officeworld.utils.serialisation import OfficeBuildingJSONHandler
 
 Colors = {
     CellType.WALL: (50, 15, 15),
@@ -21,13 +22,11 @@ Colors = {
 office_gen = OfficeGenerator(
     floor_width=50,
     floor_height=40,
-    min_room_area=9,
-    min_room_length=3,
+    min_room_area=12,
+    min_room_length=4,
     max_hall_rate=0.2,
-    num_floors=8,
-    elevator_location=(25, 20),
-    start_floor=0,
-    goal_floor=7,
+    num_floors=1,
+    elevator_location=(20, 25),
 )
 # office_gen = OfficeGenerator(start_floor=0, goal_floor=0)
 # office = office_gen.generate_office_floor()
@@ -54,11 +53,9 @@ font = pygame.font.SysFont("Courier New", 16)
 
 def regen_office():
     office = office_gen.generate_office_building()
-    with open("office.json", "w") as f:
-        json.dump(office, f, cls=EnumEncoder)
 
-    with open("office.json", "r") as f:
-        office = json.load(f, object_hook=as_enum)
+    OfficeBuildingJSONHandler.save_to_json(office, "office.json")
+    office = OfficeBuildingJSONHandler.load_from_json("office.json")
 
     print(office_gen.generate_office_graph(layout=False).number_of_nodes())
 
@@ -66,6 +63,7 @@ def regen_office():
 
 
 office = regen_office()
+num_floors = len(office.layout)
 
 floor = 0
 running = True
@@ -76,15 +74,16 @@ while running:
             quit()
         elif event.type == pygame.KEYUP:
             if event.key == pygame.K_UP:
-                floor = min(floor + 1, len(office) - 1)
+                floor = min(floor + 1, num_floors - 1)
             elif event.key == pygame.K_DOWN:
                 floor = max(floor - 1, 0)
             elif event.key == pygame.K_r:
                 office = regen_office()
+                num_floors = len(office.layout)
             elif event.key == pygame.K_HOME:
                 floor = 0
             elif event.key == pygame.K_END:
-                floor = len(office) - 1
+                floor = num_floors - 1
 
     # Update Display.
     screen.fill(Colors[CellType.BACKGROUND])
@@ -93,16 +92,16 @@ while running:
         for x in range(office_gen.floor_width):
             pygame.draw.rect(
                 screen,
-                Colors[office[floor][y][x]],
+                Colors[office.layout[floor][y][x]],
                 pygame.Rect(OFFSET_X + x * BLOCK_SIZE, OFFSET_Y + y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
             )
 
     # Show FPS.
     screen.blit(
-        font.render(f"{int(clock.get_fps())}fps   Floor {floor + 1} of {len(office)}", 1, pygame.Color("WHITE")), (0, 0)
+        font.render(f"{int(clock.get_fps())}fps   Floor {floor + 1} of {num_floors}", 1, pygame.Color("WHITE")),
+        (0, 0),
     )
 
-    pygame.display.flip()
+    pygame.display.update()
 
-    clock.tick()
-    pygame.time.delay(200)
+    clock.tick(165)
