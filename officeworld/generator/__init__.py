@@ -1,2 +1,0 @@
-from officeworld.generator.office_generator import CellType
-from officeworld.generator.office_generator import OfficeGenerator
