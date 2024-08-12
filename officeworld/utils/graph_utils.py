@@ -7,7 +7,7 @@ def office_layout(stg, floor_height, floor_width, spacing=24.0):
     nx.set_node_attributes(stg, default_pos)
 
     for node, _ in stg.nodes(data=True):
-        (floor, x, y) = node
+        (floor, y, x) = node
 
         stg.nodes[node]["viz"]["position"]["x"] = x * spacing
         stg.nodes[node]["viz"]["position"]["y"] = -y * spacing - ((floor * floor_height) + 3) * spacing
