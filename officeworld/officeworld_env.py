@@ -110,6 +110,7 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
         self.goal_reward = goal_reward
 
         # Define the state-transition graph and the state-space.
+        self.explorable = explorable
         self.initial_states = self._initialise_initial_states()
         self.terminal_states = self._initialise_terminal_states()
         self.stg = self.generate_interaction_graph(directed=True)
@@ -137,11 +138,12 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
 
     def _initialise_terminal_states(self):
         terminal_states = set()
-        for i in range(self.num_floors):
-            for y in range(self.floor_height):
-                for x in range(self.floor_width):
-                    if self.office.layout[i][y][x] == CellType.GOAL:
-                        terminal_states.add((i, y, x))
+        if not self.explorable:
+            for i in range(self.num_floors):
+                for y in range(self.floor_height):
+                    for x in range(self.floor_width):
+                        if self.office.layout[i][y][x] == CellType.GOAL:
+                            terminal_states.add((i, y, x))
 
         return terminal_states
 
