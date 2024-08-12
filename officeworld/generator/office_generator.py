@@ -5,8 +5,8 @@ import networkx as nx
 from enum import Enum
 
 from officeworld.utils import office_layout
-
-CellType = Enum("CellType", ["WALL", "HALL", "ROOM", "UPSTAIR", "DOWNSTAIR", "ELEVATOR", "BACKGROUND", "START", "GOAL"])
+from officeworld.generator.cell_type import CellType
+from officeworld.generator.office_building import OfficeBuilding
 
 
 class OfficeGenerator(object):
@@ -21,8 +21,8 @@ class OfficeGenerator(object):
         max_hall_rate=0.15,
         extra_door_prob=0.2,
         elevator_location=None,
-        start_floor=None,
-        goal_floor=None,
+        start_floor=-1,
+        goal_floor=-1,
     ):
         """
         Initialises an Office generator.
@@ -59,36 +59,41 @@ class OfficeGenerator(object):
             self.elevator_location = elevator_location
 
         # Initialise start and goal parameters.
-        if start_floor is not None:
-            self.start_floor = start_floor
-        else:
-            self.start_floor = -1
-
-        if goal_floor is not None:
-            self.goal_floor = goal_floor
-        else:
-            self.goal_floor = -1
+        self.start_floor = start_floor
+        self.goal_floor = goal_floor
 
         # Initialise Office.
-        self.office = [self._get_empty_office_floor() for _ in range(num_floors)]
+        self.office_floors = [self._create_empty_office_floor() for _ in range(num_floors)]
+        self.office_halls = [None] * num_floors
+        self.office_rooms = [None] * num_floors
 
-    def generate_office_building(self, verbose=False):
+    def generate_office_building(self, verbose: bool = False) -> "OfficeBuilding":
         rej_elevator = 0
         rej_connected = 0
 
         for i in range(self.num_floors):
             while True:
+                # Generate a new office floor.
                 if self.elevator_location is None:
-                    self.office[i] = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                    layout, halls, rooms = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                    self.office_floors[i] = layout
+                    self.office_halls[i] = halls
+                    self.office_rooms[i] = rooms
                 else:
-                    x, y = self.elevator_location
-                    while self.office[i][y][x] != CellType.HALL:
-                        self.office[i] = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
-                        if self.office[i][y][x] != CellType.HALL:
+                    y, x = self.elevator_location
+                    while self.office_floors[i][y][x] != CellType.HALL:
+                        layout, halls, rooms = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                        self.office_floors[i] = layout
+                        self.office_halls[i] = halls
+                        self.office_rooms[i] = rooms
+
+                        if self.office_floors[i][y][x] != CellType.HALL:
                             # print("Rejected: Cannot Place Elevator in Wall.")
                             rej_elevator += 1
-                    self.office[i][y][x] = CellType.ELEVATOR
-                if nx.is_weakly_connected(self.generate_office_graph([self.office[i]], layout=False)):
+                    self.office_floors[i][y][x] = CellType.ELEVATOR
+
+                # Check that the new office floor is valid (i.e., that the state transition graph is connected).
+                if nx.is_weakly_connected(self.generate_office_graph([self.office_floors[i]], layout=False)):
                     break
                 else:
                     # print("Rejected: State-transition graph is not connected.")
@@ -100,11 +105,19 @@ class OfficeGenerator(object):
                 f"Rejected {rej_elevator + rej_connected} floors.\n\tCouldn't place elevator {rej_elevator} times.\n\tOffice not connected {rej_connected} times."
             )
 
-        return self.office
+        return OfficeBuilding(
+            self.office_floors,
+            self.office_halls,
+            self.office_rooms,
+            self.start_floor,
+            self.goal_floor,
+            self.start_floor != -1,
+            self.goal_floor != -1,
+        )
 
-    def generate_office_floor(self, contains_start=False, contains_goal=False):
+    def generate_office_floor(self, contains_start: bool = False, contains_goal: bool = False):
         # Fill entire map with wall.
-        office = self._get_empty_office_floor()
+        office_floor = self._create_empty_office_floor()
 
         splittable_chunks = [(1, 1, self.floor_width - 2, self.floor_height - 2)]
         unsplittable_chunks = []
@@ -117,7 +130,7 @@ class OfficeGenerator(object):
         while len(splittable_chunks) > 0:
             splittable_chunks.sort(key=lambda x: x[2] * x[3], reverse=True)
             chunk = splittable_chunks.pop(0)
-            office = self._carve_area(chunk, CellType.WALL, office)
+            office_floor = self._carve_area(chunk, CellType.WALL, office_floor)
 
             # If we don't yet have enough hallways, and the area is big enough, create a new
             # hallway along dividing the longest axis and add the chunks left on either side back to the queue.
@@ -133,29 +146,29 @@ class OfficeGenerator(object):
                     halls.append(hall)
                     hall_rate += hall[2] * hall[3] / self.total_floor_area
                     splittable_chunks.extend(chunks)
-                    office = self._carve_area(hall, CellType.HALL, office)
+                    office_floor = self._carve_area(hall, CellType.HALL, office_floor)
 
                     for _chunk in splittable_chunks:
-                        office = self._carve_area(_chunk, CellType.ROOM, office)
+                        office_floor = self._carve_area(_chunk, CellType.ROOM, office_floor)
 
                 # Otherwise, place the chunk in the list of unsplittable chunks.
                 else:
                     unsplittable_chunks.append(chunk)
-                    office = self._carve_area(chunk, CellType.ROOM, office)
+                    office_floor = self._carve_area(chunk, CellType.ROOM, office_floor)
             else:
                 unsplittable_chunks.append(chunk)
-                office = self._carve_area(chunk, CellType.ROOM, office)
+                office_floor = self._carve_area(chunk, CellType.ROOM, office_floor)
                 break
 
         # Finish connecting all halls to each other.
-        office = self._connect_halls(office)
+        office_floor = self._connect_halls(office_floor)
 
         # Room Phase.
         splittable_chunks = splittable_chunks + unsplittable_chunks
         while len(splittable_chunks) > 0:
             splittable_chunks.sort(key=lambda x: x[2] * x[3], reverse=True)
             chunk = splittable_chunks.pop(0)
-            office = self._carve_area(chunk, CellType.WALL, office)
+            office_floor = self._carve_area(chunk, CellType.WALL, office_floor)
 
             # Get valid directions for splitting this chunk.
             valid_split_directions = self._get_valid_split_directions(chunk)
@@ -167,13 +180,13 @@ class OfficeGenerator(object):
                 splittable_chunks.extend(chunks)
 
                 for _chunk in splittable_chunks + rooms:
-                    office = self._carve_area(_chunk, CellType.ROOM, office)
+                    office_floor = self._carve_area(_chunk, CellType.ROOM, office_floor)
 
             # If there are no valid directions to split the chunk,
             # add it to the list of final rooms.
             else:
                 rooms.append(chunk)
-                office = self._carve_area(chunk, CellType.ROOM, office)
+                office_floor = self._carve_area(chunk, CellType.ROOM, office_floor)
 
         # Doors Phase
         unconnected_rooms = rooms
@@ -199,26 +212,26 @@ class OfficeGenerator(object):
                 x, y = wall
 
                 # Check if there's a hallway above this room.
-                if y - 1 >= 0 and office[y - 1][x] == CellType.HALL and wall in top_wall:
-                    office[y][x] = CellType.ROOM
+                if y - 1 >= 0 and office_floor[y - 1][x] == CellType.HALL and wall in top_wall:
+                    office_floor[y][x] = CellType.ROOM
                     connected_rooms.append(room)
                     room_connected = True
                     break
                 # Check if there's a hallway below this room.
-                elif y + 1 < len(office) and office[y + 1][x] == CellType.HALL and wall in bottom_wall:
-                    office[y][x] = CellType.ROOM
+                elif y + 1 < len(office_floor) and office_floor[y + 1][x] == CellType.HALL and wall in bottom_wall:
+                    office_floor[y][x] = CellType.ROOM
                     connected_rooms.append(room)
                     room_connected = True
                     break
                 # Check if there's a hallway to the left of this room.
-                elif x - 1 >= 0 and office[y][x - 1] == CellType.HALL and wall in left_wall:
-                    office[y][x] = CellType.ROOM
+                elif x - 1 >= 0 and office_floor[y][x - 1] == CellType.HALL and wall in left_wall:
+                    office_floor[y][x] = CellType.ROOM
                     connected_rooms.append(room)
                     room_connected = True
                     break
                 # Check if there's a hallway to the right of this room.
-                elif x + 1 < len(office[0]) and office[y][x + 1] == CellType.HALL and wall in right_wall:
-                    office[y][x] = CellType.ROOM
+                elif x + 1 < len(office_floor[0]) and office_floor[y][x + 1] == CellType.HALL and wall in right_wall:
+                    office_floor[y][x] = CellType.ROOM
                     connected_rooms.append(room)
                     room_connected = True
                     break
@@ -232,42 +245,42 @@ class OfficeGenerator(object):
                 x, y = wall
 
                 # Check if there's a connected room above this room.
-                if y - 1 >= 0 and office[y - 1][x] == CellType.ROOM and wall in top_wall:
+                if y - 1 >= 0 and office_floor[y - 1][x] == CellType.ROOM and wall in top_wall:
                     neigh_room, _ = self._get_room_at_point(
-                        x, y - 1, connected_rooms + unconnected_rooms, halls, office
+                        x, y - 1, connected_rooms + unconnected_rooms, halls, office_floor
                     )
                     if neigh_room is not None and neigh_room in connected_rooms:
-                        office[y][x] = CellType.ROOM
+                        office_floor[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
                 # Check if there's a connected room below this room.
-                elif y + 1 < len(office) and office[y + 1][x] == CellType.ROOM and wall in bottom_wall:
+                elif y + 1 < len(office_floor) and office_floor[y + 1][x] == CellType.ROOM and wall in bottom_wall:
                     neigh_room, _ = self._get_room_at_point(
-                        x, y + 1, connected_rooms + unconnected_rooms, halls, office
+                        x, y + 1, connected_rooms + unconnected_rooms, halls, office_floor
                     )
                     if neigh_room is not None and neigh_room in connected_rooms:
-                        office[y][x] = CellType.ROOM
+                        office_floor[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
                 # Check if there's a connected room to the left of this room.
-                elif x - 1 >= 0 and office[y][x - 1] == CellType.ROOM and wall in left_wall:
+                elif x - 1 >= 0 and office_floor[y][x - 1] == CellType.ROOM and wall in left_wall:
                     neigh_room, _ = self._get_room_at_point(
-                        x - 1, y, connected_rooms + unconnected_rooms, halls, office
+                        x - 1, y, connected_rooms + unconnected_rooms, halls, office_floor
                     )
                     if neigh_room is not None and neigh_room in connected_rooms:
-                        office[y][x] = CellType.ROOM
+                        office_floor[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
                 # Check if there's a connected room to the right of this room.
-                elif x + 1 < len(office[0]) and office[y][x + 1] == CellType.ROOM and wall in right_wall:
+                elif x + 1 < len(office_floor[0]) and office_floor[y][x + 1] == CellType.ROOM and wall in right_wall:
                     neigh_room, _ = self._get_room_at_point(
-                        x + 1, y, connected_rooms + unconnected_rooms, halls, office
+                        x + 1, y, connected_rooms + unconnected_rooms, halls, office_floor
                     )
                     if neigh_room is not None and neigh_room in connected_rooms:
-                        office[y][x] = CellType.ROOM
+                        office_floor[y][x] = CellType.ROOM
                         connected_rooms.append(room)
                         room_connected = True
                         break
@@ -279,16 +292,16 @@ class OfficeGenerator(object):
         # Choose random starting room.
         if contains_start:
             starting_room = random.choice(connected_rooms)
-            self._carve_area(starting_room, CellType.START, office)
+            self._carve_area(starting_room, CellType.START, office_floor)
 
         # Choose random goal room.
         if contains_goal:
             goal_room = random.choice(connected_rooms)
-            self._carve_area(goal_room, CellType.GOAL, office)
+            self._carve_area(goal_room, CellType.GOAL, office_floor)
 
-        return office
+        return office_floor, halls, connected_rooms
 
-    def _get_empty_office_floor(self):
+    def _create_empty_office_floor(self):
         office = []
         for y in range(self.floor_height):
             office.append([])
@@ -349,21 +362,21 @@ class OfficeGenerator(object):
             d_chunk = (left, top + splitting_point + 1, width, height - splitting_point - 1)
             return [u_chunk, d_chunk]
 
-    def _carve_area(self, chunk, type, office):
+    def _carve_area(self, chunk, type, office_floor):
         left, top, width, height = chunk
         for y in range(top, top + height):
             for x in range(left, left + width):
-                office[y][x] = type
-        return office
+                office_floor[y][x] = type
+        return office_floor
 
-    def _connect_halls(self, office):
-        for y in range(len(office) - 2):
-            for x in range(len(office[0]) - 2):
-                if office[y][x - 1] == CellType.HALL and office[y][x + 1] == CellType.HALL:
-                    office[y][x] = CellType.HALL
-                elif office[y - 1][x] == CellType.HALL and office[y + 1][x] == CellType.HALL:
-                    office[y][x] = CellType.HALL
-        return office
+    def _connect_halls(self, office_floor):
+        for y in range(len(office_floor) - 2):
+            for x in range(len(office_floor[0]) - 2):
+                if office_floor[y][x - 1] == CellType.HALL and office_floor[y][x + 1] == CellType.HALL:
+                    office_floor[y][x] = CellType.HALL
+                elif office_floor[y - 1][x] == CellType.HALL and office_floor[y + 1][x] == CellType.HALL:
+                    office_floor[y][x] = CellType.HALL
+        return office_floor
 
     def _get_valid_split_directions(self, chunk):
         valid_split_directions = []
@@ -397,51 +410,56 @@ class OfficeGenerator(object):
 
     def generate_office_graph(self, office=None, layout=True):
         if office is None:
-            office = self.office
+            office_floors = self.office_floors
+
+        if isinstance(office, OfficeBuilding):
+            office_floors = office.layout
+        else:
+            office_floors = office
 
         valid_state_types = {CellType.ROOM, CellType.HALL, CellType.ELEVATOR, CellType.START, CellType.GOAL}
 
         stg = nx.DiGraph()
 
-        num_floors = len(office)
-        floor_height = len(office[0])
-        floor_width = len(office[0][0])
+        num_floors = len(office_floors)
+        floor_height = len(office_floors[0])
+        floor_width = len(office_floors[0][0])
 
         for floor in range(num_floors):
             for y in range(floor_height):
                 for x in range(floor_width):
-                    if office[floor][y][x] in valid_state_types - {CellType.GOAL}:
-                        state = (floor, x, y)
+                    if office_floors[floor][y][x] in valid_state_types - {CellType.GOAL}:
+                        state = (floor, y, x)
 
                         # Add node if it doesn't exist.
                         if state not in stg.nodes():
                             stg.add_node(state)
 
                         # Add edges between this node and its neighbours.
-                        if office[floor][y + 1][x] in valid_state_types:
-                            stg.add_edge(state, (floor, x, y + 1))
-                        if office[floor][y - 1][x] in valid_state_types:
-                            stg.add_edge(state, (floor, x, y - 1))
-                        if office[floor][y][x + 1] in valid_state_types:
-                            stg.add_edge(state, (floor, x + 1, y))
-                        if office[floor][y][x - 1] in valid_state_types:
-                            stg.add_edge(state, (floor, x - 1, y))
+                        if office_floors[floor][y + 1][x] in valid_state_types:
+                            stg.add_edge(state, (floor, y + 1, x))
+                        if office_floors[floor][y - 1][x] in valid_state_types:
+                            stg.add_edge(state, (floor, y - 1, x))
+                        if office_floors[floor][y][x + 1] in valid_state_types:
+                            stg.add_edge(state, (floor, y, x + 1))
+                        if office_floors[floor][y][x - 1] in valid_state_types:
+                            stg.add_edge(state, (floor, y, x - 1))
 
                         # Add edges between elevators on different floors.
-                        if office[floor][y][x] == CellType.ELEVATOR:
+                        if office_floors[floor][y][x] == CellType.ELEVATOR:
                             if floor < num_floors - 1:  # Up elevator.
-                                stg.add_edge(state, (floor + 1, x, y))
+                                stg.add_edge(state, (floor + 1, y, x))
                             if floor > 0:  # Down elevator.
-                                stg.add_edge(state, (floor - 1, x, y))
+                                stg.add_edge(state, (floor - 1, y, x))
 
                         # Add self-loops to states next to walls.
-                        if office[floor][y + 1][x] == CellType.WALL:
+                        if office_floors[floor][y + 1][x] == CellType.WALL:
                             stg.add_edge(state, state)
-                        if office[floor][y - 1][x] == CellType.WALL:
+                        if office_floors[floor][y - 1][x] == CellType.WALL:
                             stg.add_edge(state, state)
-                        if office[floor][y][x + 1] == CellType.WALL:
+                        if office_floors[floor][y][x + 1] == CellType.WALL:
                             stg.add_edge(state, state)
-                        if office[floor][y][x - 1] == CellType.WALL:
+                        if office_floors[floor][y][x - 1] == CellType.WALL:
                             stg.add_edge(state, state)
 
         if layout:
