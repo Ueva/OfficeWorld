@@ -33,10 +33,6 @@ class OfficeBuildingJSONHandler:
                     "layout": obj.layout,
                     "halls": obj.halls,
                     "rooms": obj.rooms,
-                    "start_floor": obj.start_floor,
-                    "goal_floor": obj.goal_floor,
-                    "contains_start": obj.contains_start,
-                    "contains_goal": obj.contains_goal,
                 }
             elif isinstance(obj, Enum):
                 return {"__enum__": str(obj)}
@@ -67,10 +63,6 @@ class OfficeBuildingJSONHandler:
                 decoded_layout,
                 decoded_halls,
                 decoded_rooms,
-                obj["start_floor"],
-                obj["goal_floor"],
-                obj["contains_start"],
-                obj["contains_goal"],
             )
         elif "__enum__" in obj:
             name, member = obj["__enum__"].split(".")
@@ -79,11 +71,11 @@ class OfficeBuildingJSONHandler:
             return obj
 
     @staticmethod
-    def save_to_json(obj, file_path):
+    def save_to_json(obj, file_path) -> "OfficeBuilding":
         with open(file_path, "w") as f:
             json.dump(obj, f, cls=OfficeBuildingJSONHandler.Encoder)
 
     @staticmethod
-    def load_from_json(file_path):
+    def load_from_json(file_path) -> "OfficeBuilding":
         with open(file_path, "r") as f:
             return json.load(f, object_hook=OfficeBuildingJSONHandler.decoder)

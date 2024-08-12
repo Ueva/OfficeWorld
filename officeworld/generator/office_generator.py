@@ -21,8 +21,6 @@ class OfficeGenerator(object):
         max_hall_rate=0.15,
         extra_door_prob=0.2,
         elevator_location=None,
-        start_floor=-1,
-        goal_floor=-1,
     ):
         """
         Initialises an Office generator.
@@ -37,8 +35,6 @@ class OfficeGenerator(object):
             max_hall_rate (float, optional): The proportion of a floor the generator will aim to cover in corridors. Defaults to 0.15.
             extra_door_prob (float, optional): How likely another door will be added to a room after one has already been placed. Defaults to 0.2.
             elevator_location (_type_, optional): The at which the elevator shaft will be placed. Defaults to None.
-            start_floor (_type_, optional): Which floor the start room will be on. Defaults to None.
-            goal_floor (_type_, optional): Which floor the goal room will be on. Defaults to None.
         """
         # Initialise Floor Parameters.
         self.floor_width = floor_width
@@ -58,10 +54,6 @@ class OfficeGenerator(object):
         else:
             self.elevator_location = elevator_location
 
-        # Initialise start and goal parameters.
-        self.start_floor = start_floor
-        self.goal_floor = goal_floor
-
         # Initialise Office.
         self.office_floors = [self._create_empty_office_floor() for _ in range(num_floors)]
         self.office_halls = [None] * num_floors
@@ -75,14 +67,14 @@ class OfficeGenerator(object):
             while True:
                 # Generate a new office floor.
                 if self.elevator_location is None:
-                    layout, halls, rooms = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                    layout, halls, rooms = self.generate_office_floor()
                     self.office_floors[i] = layout
                     self.office_halls[i] = halls
                     self.office_rooms[i] = rooms
                 else:
                     y, x = self.elevator_location
                     while self.office_floors[i][y][x] != CellType.HALL:
-                        layout, halls, rooms = self.generate_office_floor(i == self.start_floor, i == self.goal_floor)
+                        layout, halls, rooms = self.generate_office_floor()
                         self.office_floors[i] = layout
                         self.office_halls[i] = halls
                         self.office_rooms[i] = rooms
@@ -105,17 +97,9 @@ class OfficeGenerator(object):
                 f"Rejected {rej_elevator + rej_connected} floors.\n\tCouldn't place elevator {rej_elevator} times.\n\tOffice not connected {rej_connected} times."
             )
 
-        return OfficeBuilding(
-            self.office_floors,
-            self.office_halls,
-            self.office_rooms,
-            self.start_floor,
-            self.goal_floor,
-            self.start_floor != -1,
-            self.goal_floor != -1,
-        )
+        return OfficeBuilding(self.office_floors, self.office_halls, self.office_rooms)
 
-    def generate_office_floor(self, contains_start: bool = False, contains_goal: bool = False):
+    def generate_office_floor(self):
         # Fill entire map with wall.
         office_floor = self._create_empty_office_floor()
 
@@ -288,16 +272,6 @@ class OfficeGenerator(object):
             # Else, return the room to the list of unconnected rooms.
             if not room_connected:
                 unconnected_rooms.append(room)
-
-        # Choose random starting room.
-        if contains_start:
-            starting_room = random.choice(connected_rooms)
-            self._carve_area(starting_room, CellType.START, office_floor)
-
-        # Choose random goal room.
-        if contains_goal:
-            goal_room = random.choice(connected_rooms)
-            self._carve_area(goal_room, CellType.GOAL, office_floor)
 
         return office_floor, halls, connected_rooms
 
