@@ -10,6 +10,7 @@ from simpleoptions import TransitionMatrixBaseEnvironment
 from officeworld.generator.office_generator import OfficeGenerator
 from officeworld.generator.office_building import OfficeBuilding
 from officeworld.generator.cell_type import CellType
+from officeworld.interface.officeworld_renderer import OfficeWorldRenderer
 from officeworld.utils.graph_utils import office_layout
 
 # TODO: ADD SUPPORT FOR UPSTAIR AND DOWNSTAIR TILES.
@@ -119,6 +120,9 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
         self.successor_representation = None
         self._cached_sr_gamma = None
 
+        # Renderer variables.
+        self.renderer = None
+
         super().__init__(deterministic=True)
 
     def _initialise_initial_states(self):
@@ -162,10 +166,17 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
         return next_state, reward, terminal, info
 
     def render(self, mode="human"):
-        pass
+        if self.renderer is None:
+            self.renderer = OfficeWorldRenderer(
+                self.office.layout, self.num_floors, self.floor_height, self.floor_width
+            )
+
+        self.renderer.update(self.current_state)
 
     def close(self):
-        pass
+        if self.renderer is not None:
+            self.renderer.close()
+            self.renderer = None
 
     def get_state_space(self):
         return self.state_space
