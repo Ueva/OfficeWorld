@@ -1,9 +1,10 @@
+import copy
 import random
 
 import networkx as nx
 import numpy as np
 
-from typing import Dict
+from typing import Dict, Tuple
 
 from simpleoptions import TransitionMatrixBaseEnvironment
 
@@ -26,6 +27,10 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
         officegen_kwargs: Dict = None,
         movement_penalty: float = -0.0001,
         goal_reward: float = 1.0,
+        start_floor: int = -1,
+        goal_floor: int = -1,
+        start_room: Tuple[int, int, int, int] = None,
+        goal_room: Tuple[int, int, int, int] = None,
         explorable: bool = False,
     ):
         """
@@ -40,14 +45,19 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
 
         Raises:
             ValueError: Raised if both office and officegen_kwargs are None. You must either provide a pre-generated office, or tell this class how to generate one.
+            ValueError: Raised if a start or goal room is provided without a corresponding floor. You must provide a start/goal floor if you provide a start/goal room.
         """
-
+        # Handle erroneous inputs.
         if officegen_kwargs is None and office is None:
             raise ValueError("You must provide either an existing office or the arguments to generate one.")
+        if start_floor == -1 and start_room is not None:
+            raise ValueError("You must provide a start floor if you provide a start room.")
+        if goal_floor == -1 and goal_room is not None:
+            raise ValueError("You must provide a goal floor if you provide a goal room.")
 
         if office is not None:
             self._office_gen = OfficeGenerator()
-            self.office = office
+            self.office = copy.deepcopy(office)
         else:
             self._office_gen = OfficeGenerator(**officegen_kwargs)
             self.office = self._office_gen.generate_office_building()
@@ -61,49 +71,40 @@ class OfficeWorldEnvironment(TransitionMatrixBaseEnvironment):
         self.actions = [0, 1, 2, 3, 4, 5]  # North, South, East, West, Ascend, Descend.
         self.num_actions = len(self.actions)
 
-        # If the office doesn't contain a start, we need to choose one.
-        if not self.office.contains_start:
-            start_room = None
-            while start_room is None:
-                # If a start floor is specified, we can choose a random start room on that floor.
-                if self.office.start_floor != -1:
-                    start_floor = self.office.start_floor
-                # Otherwise, we choose a random start floor.
-                else:
-                    start_floor = random.randint(0, self.num_floors - 1)
-
-                # Pick a random room on the start floor and set it as the start.
-                start_room = random.choice(self.office.rooms[start_floor])
-
-                # Check that the room is empty (i.e., that its cells are "ROOM" cells). We only need to check the top-left cell.
-                # We don't want to overwrite a room that has already been set as a goal.
-                left, top, _, _ = start_room
-                if self.office.layout[start_floor][top][left] != CellType.ROOM:
-                    start_room = None
-
+        ## START ROOM ##
+        # Use specified room on specified floor.
+        if start_floor != -1 and start_room is not None:
             self._office_gen._carve_area(start_room, CellType.START, self.office.layout[start_floor])
+        # Use random room on specified floor.
+        elif start_floor != -1:
+            start_room = random.choice(self.office.rooms[start_floor])
+            self._office_gen._carve_area(start_room, CellType.START, self.office.layout[start_floor])
+        # Choose random room on random floor.
+        else:
+            start_room = random.choice(random.choice(self.office.rooms))
+            self._office_gen._carve_area(
+                start_room, CellType.START, self.office.layout[random.randint(0, self.num_floors - 1)]
+            )
 
-        # If the office doesn't contain a goal, we need to choose one.
-        if not self.office.contains_goal and not explorable:
-            goal_room = None
-            while goal_room is None:
-                # If a goal floor is specified, we can choose a random goal room on that floor.
-                if self.office.goal_floor != -1:
-                    goal_floor = self.office.goal_floor
-                # Otherwise, we choose a random goal floor.
-                else:
-                    goal_floor = random.randint(0, self.num_floors - 1)
-
-                # Pick a random room on the goal floor and set it as the goal.
+        ## GOAL ROOM ##
+        if not explorable:
+            # Use specified room on specified floor.
+            if goal_floor != -1 and goal_room is not None:
+                self._office_gen._carve_area(goal_room, CellType.GOAL, self.office.layout[goal_floor])
+            # Use random room on specified floor.
+            elif goal_floor != -1:
                 goal_room = random.choice(self.office.rooms[goal_floor])
-
-                # Check that the room is empty (i.e., that its cells are "ROOM" cells). We only need to check the top-left cell.
-                # We don't want to overwrite a room that has already been set as a start.
-                left, top, _, _ = goal_room
-                if self.office.layout[goal_floor][top][left] != CellType.ROOM:
-                    goal_room = None
-
-            self._office_gen._carve_area(goal_room, CellType.GOAL, self.office.layout[goal_floor])
+                self._office_gen._carve_area(goal_room, CellType.GOAL, self.office.layout[goal_floor])
+            # Use random room on random floor, but don't overwrite start room.
+            else:
+                goal_room = None
+                while goal_room is None:
+                    goal_floor = random.randint(0, self.num_floors - 1)
+                    goal_room = random.choice(self.office.rooms[goal_floor])
+                    left, top, _, _ = goal_room
+                    if self.office.layout[goal_floor][top][left] != CellType.ROOM:
+                        goal_room = None
+                self._office_gen._carve_area(goal_room, CellType.GOAL, self.office.layout[goal_floor])
 
         # Define rewards and penalties.
         self.movement_penalty = movement_penalty
